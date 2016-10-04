@@ -1,0 +1,215 @@
+package com.radial.fraudmanagement;
+
+import com.radial.fraudmanagement.IPAddress;
+import com.radial.fraudmanagement.Order;
+import com.radial.fraudmanagement.FraudRequest;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+
+function boolean isNullIP(IPAddress ip) {
+    boolean status=true;
+    if(null != ip && null != ip.getCountryName() && null != ip.getCountryName().getCode()) {
+        status=false;
+    } 
+    return status;
+}
+
+function boolean isNullBilling(Order pOrder) {
+    boolean status=true;
+    if(null != pOrder && null != pOrder.getTotalCost() && null != pOrder.getTotalCost().getAddress() &&
+        null != pOrder.getTotalCost().getAddress().getCountryName() && null != pOrder.getTotalCost().getAddress().getCountryName().getCode()) {
+        status=false;
+    }
+    return status;
+}
+
+function boolean dollarAmountInRange(Order pOrder) {
+    boolean status=false;
+    if(null != pOrder && null != pOrder.getTotalCost() && null != pOrder.getTotalCost().getCostTotals()) {
+        float amount=pOrder.getTotalCost().getCostTotals().getAmountAfterTax();
+        if(amount >= 0 || amount < 150) {
+         status=true;
+        }
+    }
+    return status;
+}
+
+function boolean BillingCountryEqual(FraudRequest fRequest) {
+    boolean status = false;
+    if(fRequest.getIpAddress().getCountryName().getCode().equalsIgnoreCase(fRequest.getOrder().getTotalCost().getAddress().getCountryName().getCode())){
+        status=true;
+    }
+    return status;
+}
+
+function boolean billingCountryUS(Order pOrder) {
+    boolean status=false;
+    if(!isNullBilling(pOrder) && "US".equalsIgnoreCase(pOrder.getTotalCost().getAddress().getCountryName().getCode())) {
+        status=true;
+    }
+    return status;
+}
+
+function boolean isBNLowerCase(Order pOrder) {
+    boolean status=false;
+    if(null != pOrder && null != pOrder.getTotalCost() && null != pOrder.getTotalCost().getPersonName() &&
+        null != pOrder.getTotalCost().getPersonName().getGivenName() && null != pOrder.getTotalCost().getPersonName().getSurname()) {
+        String firstName=pOrder.getTotalCost().getPersonName().getGivenName();
+        String lastName=pOrder.getTotalCost().getPersonName().getSurname();
+        if(isLowerCase(firstName) && isLowerCase(lastName)) {
+            status=true;
+        }
+    }
+    return status;
+}
+
+function boolean isLowerCase(String name) {
+    return name.equals(name.toLowerCase());
+}
+
+function boolean validateEmail(String email) {
+    String regex = "^(.+)@(.+)$";
+    Pattern pattern = Pattern.compile(regex);
+    Matcher matcher = pattern.matcher(email);
+    boolean status = false;
+    if(matcher.matches()) {
+        String firstPart = matcher.group(1);
+        String lastPart = matcher.group(2);
+        if("radial.com".equalsIgnoreCase(lastPart) || "radial.org".equalsIgnoreCase(lastPart)) {
+            status=true;
+        }
+    }
+    return status;
+}
+
+function boolean containsCaseInsensitive(String productName) {
+    if(productName.toLowerCase().contains("tricycle")) {
+        return true;
+    }
+    return false;                       
+}
+
+
+rule "Rule1 NullIP"
+    ruleflow-group "AllRules"
+	dialect "java"
+	salience 10
+	when
+		fraud:Fraud(null != Fraud.getFraudRequest(), isNullIP(Fraud.getFraudRequest().getIpAddress()))
+	then
+	    AuditTrail trail = new AuditTrail();
+	    trail.setScore(100);
+	    trail.setRule("Rule1 NullIP");
+	    trail.setAction("None");
+	    trail.setNotes("Null IP, rule should not fire");
+	    fraud.getAudit().getAuditTrail().add(trail);
+	    System.out.println("score:::"+ fraud.getAudit().getTotalScore());
+		insert( fraud );
+end
+
+rule "Rule1 NullBC"
+    ruleflow-group "AllRules"
+	dialect "java"
+	salience 9
+	when
+		fraud:Fraud(null != Fraud.getFraudRequest(), isNullBilling(Fraud.getFraudRequest().getOrder()))
+	then
+	    AuditTrail trail = new AuditTrail();
+	    trail.setScore(100);
+	    trail.setRule("Rule1 NullBC");
+	    trail.setAction("None");
+	    trail.setNotes("Null BillingCountry, rule should not fire");
+	    fraud.getAudit().getAuditTrail().add(trail);
+	    System.out.println("score:::"+ fraud.getAudit().getTotalScore());
+		insert( fraud );
+end
+
+rule "Rule1 BillingNameLowerCase"
+	dialect "java"
+	ruleflow-group "AllRules"
+	salience 8
+	when
+		fraud:Fraud(null != Fraud.getFraudRequest(), !isBNLowerCase(Fraud.getFraudRequest().getOrder()))
+	then
+	    AuditTrail trail = new AuditTrail();
+	    trail.setScore(100);
+	    trail.setRule("Rule1 BillingNameLowerCase");
+	    trail.setAction("None");
+	    trail.setNotes("BillingName not in lower case, rule should not fire");
+	    fraud.getAudit().getAuditTrail().add(trail);
+	    System.out.println("score:::"+ fraud.getAudit().getTotalScore());
+		insert( fraud );
+end
+
+rule "Rule1 BillingCountryUS"
+	dialect "java"
+	ruleflow-group "AllRules"
+	salience 7
+	when
+		fraud:Fraud(null != Fraud.getFraudRequest(), billingCountryUS(Fraud.getFraudRequest().getOrder()))
+	then
+	    AuditTrail trail = new AuditTrail();
+	    trail.setScore(100);
+	    trail.setRule("Rule1 BillingCountryUS");
+	    trail.setAction("None");
+	    trail.setNotes("Country = US, rule should not fire");
+	    fraud.getAudit().getAuditTrail().add(trail);
+	    System.out.println("score:::"+ fraud.getAudit().getTotalScore());
+		insert( fraud );
+end
+
+rule "Rule1 DollarAmountRange"
+	dialect "java"
+	ruleflow-group "AllRules"
+	salience 6
+	when
+		fraud:Fraud(null != Fraud.getFraudRequest(), !dollarAmountInRange(Fraud.getFraudRequest().getOrder()))
+	then
+	    AuditTrail trail = new AuditTrail();
+	    trail.setScore(100);
+	    trail.setRule("Rule1 DollarAmountRange");
+	    trail.setAction("None");
+	    trail.setNotes("Dollar Amount not in range, rule should not fire");
+	    fraud.getAudit().getAuditTrail().add(trail);
+	    System.out.println("score:::"+ fraud.getAudit().getTotalScore());
+		insert( fraud );
+end
+
+rule "Rule1 MeetsAllCriteria"
+	dialect "java"
+	ruleflow-group "AllRules"
+	salience 5
+	when
+		fraud:Fraud(null != Fraud.getFraudRequest(), !isNullIP(Fraud.getFraudRequest().getIpAddress()),
+		!isNullBilling(Fraud.getFraudRequest().getOrder()),isBNLowerCase(Fraud.getFraudRequest().getOrder()),
+		dollarAmountInRange(Fraud.getFraudRequest().getOrder()), !billingCountryUS(Fraud.getFraudRequest().getOrder()),
+		BillingCountryEqual(Fraud.getFraudRequest()))
+	then
+	    AuditTrail trail = new AuditTrail();
+	    trail.setScore(-300);
+	    trail.setRule("Rule1 MeetsAllCriteria");
+	    trail.setAction("Automatic Approval");
+	    trail.setNotes("Meets all conditions");
+	    fraud.getAudit().getAuditTrail().add(trail);
+	    System.out.println("score:::"+ fraud.getAudit().getTotalScore());
+		insert( fraud );
+end
+
+rule "Rule1 BillingCountryNotMatching"
+	dialect "java"
+	ruleflow-group "AllRules"
+	salience 6
+	when
+		fraud:Fraud(null != Fraud.getFraudRequest(), !isNullIP(Fraud.getFraudRequest().getIpAddress()),
+		!isNullBilling(Fraud.getFraudRequest().getOrder()), !billingCountryUS(Fraud.getFraudRequest().getOrder()), !BillingCountryEqual(Fraud.getFraudRequest()))
+	then
+	    AuditTrail trail = new AuditTrail();
+	    trail.setScore(100);
+	    trail.setRule("Rule1 BillingCountryNotMatching");
+	    trail.setAction("None");
+	    trail.setNotes("Billing Country not matching with IP Country");
+	    fraud.getAudit().getAuditTrail().add(trail);
+	    System.out.println("score:::"+ fraud.getAudit().getTotalScore());
+		insert( fraud );
+end
+

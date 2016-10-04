@@ -1,0 +1,86 @@
+package com.radial.fraudmanagement;
+
+import com.radial.fraudmanagement.IPAddress;
+import com.radial.fraudmanagement.Order;
+import com.radial.fraudmanagement.FraudRequest;
+import com.radial.fraudmanagement.LineItem;
+
+
+function boolean isProductNameContain(Order pOrder) {
+    boolean status = false;
+    if(null != pOrder && null != pOrder.getLineItems() && null != pOrder.getLineItems().getLineItem()
+    && pOrder.getLineItems().getLineItem().size() > 0) {
+        int count = 0;
+        for(LineItem item: pOrder.getLineItems().getLineItem()) {
+            if(null != item.getName() && containsCaseInsensitive(item.getName())) {
+                count++;
+            }
+        }
+        if(count == pOrder.getLineItems().getLineItem().size()) {
+            status = true;
+        }
+    }
+    return status;
+}
+
+function boolean isShippingMethodExist(Order pOrder) {
+    boolean status = false;
+    if(null != pOrder && null != pOrder.getShippingInfo() && null != pOrder.getShippingInfo().getShippingMethod() &&
+    (pOrder.getShippingInfo().getShippingMethod().equalsIgnoreCase("ground") || pOrder.getShippingInfo().getShippingMethod().equalsIgnoreCase("2nd day"))) {
+        status = true;
+    }
+    return status;
+}
+
+rule "Rule2 ProductNameDoesNotContain"
+	dialect "java"
+	ruleflow-group "AllRules"
+	salience 4
+	when
+		fraud:Fraud(null != Fraud.getFraudRequest(), !isProductNameContain(Fraud.getFraudRequest().getOrder()))
+	then
+	    AuditTrail trail = new AuditTrail();
+	    trail.setScore(100);
+	    trail.setRule("Rule2 ProductNameDoesNotContain");
+	    trail.setAction("None");
+	    trail.setNotes("Does not meet Product Name");
+	    fraud.getAudit().getAuditTrail().add(trail);
+	    System.out.println("score:::"+ fraud.getAudit().getTotalScore());
+		insert( fraud );
+end
+
+rule "Rule2 ShippingMethod"
+	dialect "java"
+	ruleflow-group "AllRules"
+	salience 3
+	when
+		fraud:Fraud(null != Fraud.getFraudRequest(), !isShippingMethodExist(Fraud.getFraudRequest().getOrder()))
+	then
+	    AuditTrail trail = new AuditTrail();
+	    trail.setScore(100);
+	    trail.setRule("Rule2 ShippingMethod");
+	    trail.setAction("None");
+	    trail.setNotes("Does not meet Shipping Method");
+	    fraud.getAudit().getAuditTrail().add(trail);
+	    System.out.println("score:::"+ fraud.getAudit().getTotalScore());
+		insert( fraud );
+end
+
+rule "Rule2 MeetsAllCriteria"
+	dialect "java"
+	ruleflow-group "AllRules"
+	salience 2
+	when
+		fraud:Fraud(null != Fraud.getFraudRequest(), isShippingMethodExist(Fraud.getFraudRequest().getOrder()),
+		        isProductNameContain(Fraud.getFraudRequest().getOrder()))
+	then
+	    AuditTrail trail = new AuditTrail();
+	    trail.setScore(-200);
+	    trail.setRule("Rule2 MeetsAllCriteria");
+	    trail.setAction("Held for Screening");
+	    trail.setNotes("Meets all conditions");
+	    fraud.getAudit().getAuditTrail().add(trail);
+	    System.out.println("score:::"+ fraud.getAudit().getTotalScore());
+		insert( fraud );
+end
+

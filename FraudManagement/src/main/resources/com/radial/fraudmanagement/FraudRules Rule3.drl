@@ -1,0 +1,122 @@
+package com.radial.fraudmanagement;
+
+import com.radial.fraudmanagement.IPAddress;
+import com.radial.fraudmanagement.Order;
+import com.radial.fraudmanagement.FraudRequest;
+import com.radial.fraudmanagement.LineItem;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.List;
+import java.util.ArrayList;
+
+function List<String> loadMailContent(String email) {
+    String regex = "^(.+)@(.+)$";
+    List<String> mailContent = new ArrayList<String>();
+    Pattern pattern = Pattern.compile(regex);
+    Matcher matcher = pattern.matcher(email);
+    boolean status = false;
+    if(matcher.matches()) {
+        mailContent.add(matcher.group(1));
+        mailContent.add(matcher.group(2));
+    }
+    return mailContent;
+}
+
+function boolean emailDomainCheck(String email) {
+    boolean status = false;
+    if(null != email) {
+    List<String> mail = loadMailContent(email);
+    if(null != mail && mail.size() > 1) {
+        String emaildomain = mail.get(1);
+        if("radial.com".equalsIgnoreCase(emaildomain) || "radial.org".equalsIgnoreCase(emaildomain)) {
+            status = true;
+        }
+      }
+    }
+    return status;
+}
+
+function boolean containsSurName(String email, String surname) {
+    boolean status = false;
+    if(null != surname && null != email) {
+         List<String> mail = loadMailContent(email);
+         if(null != mail && mail.size() > 0) {
+        String emailFirstPart = mail.get(0);
+        if(emailFirstPart.toLowerCase().contains(surname.toLowerCase())) {
+            status = true;
+        }
+      }
+    }
+    return status;                   
+}
+
+function boolean validEmailDomain(Order pOrder) {
+    boolean status = false;
+    if(null != pOrder && null != pOrder.getTotalCost() && null != pOrder.getTotalCost().getEmail()) {
+        status = emailDomainCheck(pOrder.getTotalCost().getEmail());
+    }
+    return status;
+}
+
+function boolean surnameInEmail(Order pOrder) {
+    boolean status = false;
+    if(null != pOrder && null != pOrder.getTotalCost() && null != pOrder.getTotalCost().getEmail() &&
+    null != pOrder.getTotalCost().getPersonName() && null != pOrder.getTotalCost().getPersonName().getSurname()) {
+        status = containsSurName(pOrder.getTotalCost().getEmail(),pOrder.getTotalCost().getPersonName().getSurname());
+    }
+    return status;
+}
+
+
+
+rule "Rule3 EmailDomain"
+    salience 3
+    ruleflow-group "AllRules"
+	dialect "java"
+	when
+		fraud:Fraud(null != Fraud.getFraudRequest(), !validEmailDomain(Fraud.getFraudRequest().getOrder()))
+	then
+	    AuditTrail trail = new AuditTrail();
+	    trail.setScore(100);
+	    trail.setRule("Rule3 EmailDomain");
+	    trail.setAction("None");
+	    trail.setNotes("Email Domain not in list");
+	    fraud.getAudit().getAuditTrail().add(trail);
+	    System.out.println("score:::"+ fraud.getAudit().getTotalScore());
+		insert( fraud );
+end
+
+rule "Rule3 SurNameInEmail"
+    salience 2
+    ruleflow-group "AllRules"
+	dialect "java"
+	when
+		fraud:Fraud(null != Fraud.getFraudRequest(), !surnameInEmail(Fraud.getFraudRequest().getOrder()))
+	then
+	    AuditTrail trail = new AuditTrail();
+	    trail.setScore(100);
+	    trail.setRule("Rule3 SurNameInEmail");
+	    trail.setAction("None");
+	    trail.setNotes("Surname not contained in email");
+	    fraud.getAudit().getAuditTrail().add(trail);
+	    System.out.println("score:::"+ fraud.getAudit().getTotalScore());
+		insert( fraud );
+end
+
+rule "Rule3 MeetsAllCriteria"
+	dialect "java"
+	ruleflow-group "AllRules"
+	salience 1
+	when
+		fraud:Fraud(null != Fraud.getFraudRequest(),validEmailDomain(Fraud.getFraudRequest().getOrder()), surnameInEmail(Fraud.getFraudRequest().getOrder()))
+	then
+	    AuditTrail trail = new AuditTrail();
+	    trail.setScore(-200);
+	    trail.setRule("Rule3 MeetsAllCriteria");
+	    trail.setAction("Held for Screening");
+	    trail.setNotes("Meets all conditions");
+	    fraud.getAudit().getAuditTrail().add(trail);
+	    System.out.println("score:::"+ fraud.getAudit().getTotalScore());
+		insert( fraud );
+end
+
